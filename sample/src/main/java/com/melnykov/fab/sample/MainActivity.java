@@ -1,5 +1,6 @@
 package com.melnykov.fab.sample;
 
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.os.Bundle;
@@ -12,19 +13,21 @@ import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.text.Html;
 import android.text.method.LinkMovementMethod;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
-import android.widget.ListAdapter;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
 import com.melnykov.fab.FloatingActionButton;
+import com.melnykov.fab.ObservableScrollView;
+import com.melnykov.fab.ScrollDirectionListener;
 
-public class MainActivity extends ActionBarActivity implements ActionBar.OnNavigationListener {
+public class MainActivity extends ActionBarActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,10 +49,12 @@ public class MainActivity extends ActionBarActivity implements ActionBar.OnNavig
                     }
 
                     @Override
-                    public void onTabUnselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {}
+                    public void onTabUnselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                    }
 
                     @Override
-                    public void onTabReselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {}
+                    public void onTabReselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                    }
                 }));
             actionBar.addTab(actionBar.newTab()
                 .setText("RecyclerView")
@@ -60,10 +65,28 @@ public class MainActivity extends ActionBarActivity implements ActionBar.OnNavig
                     }
 
                     @Override
-                    public void onTabUnselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {}
+                    public void onTabUnselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                    }
 
                     @Override
-                    public void onTabReselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {}
+                    public void onTabReselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                    }
+                }));
+            actionBar.addTab(actionBar.newTab()
+                .setText("ScrollView")
+                .setTabListener(new ActionBar.TabListener() {
+                    @Override
+                    public void onTabSelected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                        fragmentTransaction.replace(android.R.id.content, new ScrollViewFragment());
+                    }
+
+                    @Override
+                    public void onTabUnselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                    }
+
+                    @Override
+                    public void onTabReselected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
+                    }
                 }));
         }
     }
@@ -81,49 +104,43 @@ public class MainActivity extends ActionBarActivity implements ActionBar.OnNavig
             content.setMovementMethod(LinkMovementMethod.getInstance());
             content.setText(Html.fromHtml(getString(R.string.about_body)));
             new AlertDialog.Builder(this)
-                    .setTitle(R.string.about)
-                    .setView(content)
-                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            dialog.dismiss();
-                        }
-                    }).create().show();
+                .setTitle(R.string.about)
+                .setView(content)
+                .setInverseBackgroundForced(true)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.dismiss();
+                    }
+                }).create().show();
         }
         return super.onOptionsItemSelected(item);
     }
 
-    @Override
-    public boolean onNavigationItemSelected(int itemPosition, long itemId) {
-        switch (itemPosition) {
-            case 0:
-                getSupportFragmentManager().beginTransaction()
-                    .replace(android.R.id.content, new ListViewFragment())
-                    .commit();
-                return true;
-            case 1:
-                getSupportFragmentManager().beginTransaction()
-                    .replace(android.R.id.content, new RecyclerViewFragment())
-                    .commit();
-                return true;
-            default:
-                return false;
-        }
-    }
-
     public static class ListViewFragment extends Fragment {
+
+        @SuppressLint("InflateParams")
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View root = inflater.inflate(R.layout.fragment_listview, container, false);
 
             ListView list = (ListView) root.findViewById(android.R.id.list);
-
-            ListAdapter listAdapter = new ArrayAdapter<String>(getActivity(), R.layout.list_item,
+            ListViewAdapter listAdapter = new ListViewAdapter(getActivity(),
                 getResources().getStringArray(R.array.countries));
             list.setAdapter(listAdapter);
 
             FloatingActionButton fab = (FloatingActionButton) root.findViewById(R.id.fab);
-            fab.attachToListView(list);
+            fab.attachToListView(list, new ScrollDirectionListener() {
+                @Override
+                public void onScrollDown() {
+                    Log.d("ListViewFragment", "onScrollDown()");
+                }
+
+                @Override
+                public void onScrollUp() {
+                    Log.d("ListViewFragment", "onScrollUp()");
+                }
+            });
 
             return root;
         }
@@ -140,18 +157,39 @@ public class MainActivity extends ActionBarActivity implements ActionBar.OnNavig
             recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
             recyclerView.addItemDecoration(new DividerItemDecoration(getActivity(), DividerItemDecoration.VERTICAL_LIST));
 
-            final RecyclerViewAdapter adapter = new RecyclerViewAdapter(getResources()
+            RecyclerViewAdapter adapter = new RecyclerViewAdapter(getActivity(), getResources()
                 .getStringArray(R.array.countries));
             recyclerView.setAdapter(adapter);
 
             FloatingActionButton fab = (FloatingActionButton) root.findViewById(R.id.fab);
             fab.attachToRecyclerView(recyclerView);
-            fab.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    adapter.notifyItemInserted(2);
-                }
-            });
+
+            return root;
+        }
+    }
+
+    public static class ScrollViewFragment extends Fragment {
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+            View root = inflater.inflate(R.layout.fragment_scrollview, container, false);
+
+            ObservableScrollView scrollView = (ObservableScrollView) root.findViewById(R.id.scroll_view);
+            LinearLayout list = (LinearLayout) root.findViewById(R.id.list);
+
+            String[] countries = getResources().getStringArray(R.array.countries);
+            for (String country : countries) {
+                TextView textView = (TextView) inflater.inflate(R.layout.list_item, container, false);
+                String[] values = country.split(",");
+                String countryName = values[0];
+                int flagResId = getResources().getIdentifier(values[1], "drawable", getActivity().getPackageName());
+                textView.setText(countryName);
+                textView.setCompoundDrawablesWithIntrinsicBounds(flagResId, 0, 0, 0);
+
+                list.addView(textView);
+            }
+
+            FloatingActionButton fab = (FloatingActionButton) root.findViewById(R.id.fab);
+            fab.attachToScrollView(scrollView);
 
             return root;
         }

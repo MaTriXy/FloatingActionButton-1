@@ -27,6 +27,9 @@ import android.view.animation.Interpolator;
 import android.widget.AbsListView;
 import android.widget.ImageButton;
 
+import com.nineoldandroids.view.ViewHelper;
+import com.nineoldandroids.view.ViewPropertyAnimator;
+
 /**
  * Android Google+ like floating action button which reacts on the attached list view scrolling events.
  *
@@ -34,8 +37,6 @@ import android.widget.ImageButton;
  */
 public class FloatingActionButton extends ImageButton {
     private static final int TRANSLATE_DURATION_MILLIS = 200;
-    private FabOnScrollListener mOnScrollListener;
-    private FabRecyclerOnViewScrollListener mRecyclerViewOnScrollListener;
 
     @IntDef({TYPE_NORMAL, TYPE_MINI})
     public @interface TYPE {
@@ -44,9 +45,6 @@ public class FloatingActionButton extends ImageButton {
     public static final int TYPE_NORMAL = 0;
     public static final int TYPE_MINI = 1;
 
-    protected AbsListView mListView;
-    protected RecyclerView mRecyclerView;
-
     private boolean mVisible;
 
     private int mColorNormal;
@@ -54,6 +52,12 @@ public class FloatingActionButton extends ImageButton {
     private int mColorRipple;
     private boolean mShadow;
     private int mType;
+
+    private int mShadowSize;
+
+    private int mScrollThreshold;
+
+    private boolean mMarginsSet;
 
     private final Interpolator mInterpolator = new AccelerateDecelerateInterpolator();
 
@@ -75,10 +79,10 @@ public class FloatingActionButton extends ImageButton {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         int size = getDimension(
-                mType == TYPE_NORMAL ? R.dimen.fab_size_normal : R.dimen.fab_size_mini);
+            mType == TYPE_NORMAL ? R.dimen.fab_size_normal : R.dimen.fab_size_mini);
         if (mShadow && !hasLollipopApi()) {
-            int shadowSize = getDimension(R.dimen.fab_shadow_size);
-            size += shadowSize * 2;
+            size += mShadowSize * 2;
+            setMarginsWithoutShadow();
         }
         setMeasuredDimension(size, size);
     }
@@ -90,6 +94,8 @@ public class FloatingActionButton extends ImageButton {
         mColorRipple = getColor(android.R.color.white);
         mType = TYPE_NORMAL;
         mShadow = true;
+        mScrollThreshold = getResources().getDimensionPixelOffset(R.dimen.fab_scroll_threshold);
+        mShadowSize = getDimension(R.dimen.fab_shadow_size);
         if (attributeSet != null) {
             initAttributes(context, attributeSet);
         }
@@ -101,11 +107,11 @@ public class FloatingActionButton extends ImageButton {
         if (attr != null) {
             try {
                 mColorNormal = attr.getColor(R.styleable.FloatingActionButton_fab_colorNormal,
-                        getColor(R.color.material_blue_500));
+                    getColor(R.color.material_blue_500));
                 mColorPressed = attr.getColor(R.styleable.FloatingActionButton_fab_colorPressed,
-                        getColor(R.color.material_blue_600));
+                    getColor(R.color.material_blue_600));
                 mColorRipple = attr.getColor(R.styleable.FloatingActionButton_fab_colorRipple,
-                        getColor(android.R.color.white));
+                    getColor(android.R.color.white));
                 mShadow = attr.getBoolean(R.styleable.FloatingActionButton_fab_shadow, true);
                 mType = attr.getInt(R.styleable.FloatingActionButton_fab_type, TYPE_NORMAL);
             } finally {
@@ -127,12 +133,10 @@ public class FloatingActionButton extends ImageButton {
         shapeDrawable.getPaint().setColor(color);
 
         if (mShadow && !hasLollipopApi()) {
-            LayerDrawable layerDrawable = new LayerDrawable(
-                    new Drawable[]{getResources().getDrawable(R.drawable.shadow),
-                            shapeDrawable});
-            int shadowSize = getDimension(
-                    mType == TYPE_NORMAL ? R.dimen.fab_shadow_size : R.dimen.fab_mini_shadow_size);
-            layerDrawable.setLayerInset(1, shadowSize, shadowSize, shadowSize, shadowSize);
+            Drawable shadowDrawable = getResources().getDrawable(mType == TYPE_NORMAL ? R.drawable.shadow
+                : R.drawable.shadow_mini);
+            LayerDrawable layerDrawable = new LayerDrawable(new Drawable[]{shadowDrawable, shapeDrawable});
+            layerDrawable.setLayerInset(1, mShadowSize, mShadowSize, mShadowSize, mShadowSize);
             return layerDrawable;
         } else {
             return shapeDrawable;
@@ -151,11 +155,34 @@ public class FloatingActionButton extends ImageButton {
         return getResources().getDimensionPixelSize(id);
     }
 
+    private void setMarginsWithoutShadow() {
+        if (!mMarginsSet) {
+            if (getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) getLayoutParams();
+                int leftMargin = layoutParams.leftMargin - mShadowSize;
+                int topMargin = layoutParams.topMargin - mShadowSize;
+                int rightMargin = layoutParams.rightMargin - mShadowSize;
+                int bottomMargin = layoutParams.bottomMargin - mShadowSize;
+                layoutParams.setMargins(leftMargin, topMargin, rightMargin, bottomMargin);
+
+                requestLayout();
+                mMarginsSet = true;
+            }
+        }
+    }
+
     @SuppressWarnings("deprecation")
     @SuppressLint("NewApi")
     private void setBackgroundCompat(Drawable drawable) {
         if (hasLollipopApi()) {
-            setElevation(mShadow ? getDimension(R.dimen.fab_elevation_lollipop) : 0.0f);
+            float elevation;
+            if (mShadow) {
+                elevation = getElevation() > 0.0f ? getElevation()
+                    : getDimension(R.dimen.fab_elevation_lollipop);
+            } else {
+                elevation = 0.0f;
+            }
+            setElevation(elevation);
             RippleDrawable rippleDrawable = new RippleDrawable(new ColorStateList(new int[][]{{}},
                 new int[]{mColorRipple}), drawable, null);
             setOutlineProvider(new ViewOutlineProvider() {
@@ -172,17 +199,6 @@ public class FloatingActionButton extends ImageButton {
         } else {
             setBackgroundDrawable(drawable);
         }
-    }
-
-    /**
-     * @deprecated to be removed in next release.
-     * Now {@link com.melnykov.fab.ScrollDirectionDetector} is used to detect scrolling direction.
-     */
-    @Deprecated
-    protected int getListViewScrollY() {
-        View topChild = mListView.getChildAt(0);
-        return topChild == null ? 0 : mListView.getFirstVisiblePosition() * topChild.getHeight() -
-                topChild.getTop();
     }
 
     private int getMarginBottom() {
@@ -262,12 +278,8 @@ public class FloatingActionButton extends ImageButton {
         return mType;
     }
 
-    protected AbsListView.OnScrollListener getOnScrollListener() {
-        return mOnScrollListener;
-    }
-
-    protected RecyclerView.OnScrollListener getRecyclerViewOnScrollListener() {
-        return mRecyclerViewOnScrollListener;
+    public boolean isVisible() {
+        return mVisible;
     }
 
     public void show() {
@@ -309,47 +321,53 @@ public class FloatingActionButton extends ImageButton {
             }
             int translationY = visible ? 0 : height + getMarginBottom();
             if (animate) {
-                animate().setInterpolator(mInterpolator)
-                        .setDuration(TRANSLATE_DURATION_MILLIS)
-                        .translationY(translationY);
+                ViewPropertyAnimator.animate(this).setInterpolator(mInterpolator)
+                    .setDuration(TRANSLATE_DURATION_MILLIS)
+                    .translationY(translationY);
             } else {
-                setTranslationY(translationY);
+                ViewHelper.setTranslationY(this, translationY);
+            }
+
+            // On pre-Honeycomb a translated view is still clickable, so we need to disable clicks manually
+            if (!hasHoneycombApi()) {
+                setClickable(visible);
             }
         }
     }
 
-    /**
-     * If need to use custom {@link android.widget.AbsListView.OnScrollListener},
-     * pass it to {@link #attachToListView(android.widget.AbsListView, com.melnykov.fab.FloatingActionButton.FabOnScrollListener)}
-     */
     public void attachToListView(@NonNull AbsListView listView) {
-        attachToListView(listView, new FabOnScrollListener());
+        attachToListView(listView, null);
     }
 
-    /**
-     * If need to use custom {@link android.widget.AbsListView.OnScrollListener},
-     * pass it to {@link #attachToListView(android.widget.AbsListView, com.melnykov.fab.FloatingActionButton.FabOnScrollListener)}
-     */
     public void attachToRecyclerView(@NonNull RecyclerView recyclerView) {
-        attachToRecyclerView(recyclerView, new FabRecyclerOnViewScrollListener());
+        attachToRecyclerView(recyclerView, null);
     }
 
-    public void attachToListView(@NonNull AbsListView listView, @NonNull FabOnScrollListener onScrollListener) {
-        mListView = listView;
-        mOnScrollListener = onScrollListener;
-        onScrollListener.setFloatingActionButton(this);
-        onScrollListener.setListView(listView);
-        mListView.setOnScrollListener(onScrollListener);
+    public void attachToScrollView(@NonNull ObservableScrollView scrollView) {
+        attachToScrollView(scrollView, null);
     }
 
-    public void attachToRecyclerView(@NonNull RecyclerView recyclerView, @NonNull FabRecyclerOnViewScrollListener onScrollListener) {
-        mRecyclerView = recyclerView;
-        mRecyclerViewOnScrollListener = onScrollListener;
-        onScrollListener.setFloatingActionButton(this);
-        onScrollListener.setRecyclerView(recyclerView);
-        mRecyclerView.setOnScrollListener(onScrollListener);
+    public void attachToListView(@NonNull AbsListView listView, ScrollDirectionListener listener) {
+        AbsListViewScrollDetectorImpl scrollDetector = new AbsListViewScrollDetectorImpl();
+        scrollDetector.setListener(listener);
+        scrollDetector.setListView(listView);
+        scrollDetector.setScrollThreshold(mScrollThreshold);
+        listView.setOnScrollListener(scrollDetector);
     }
 
+    public void attachToRecyclerView(@NonNull RecyclerView recyclerView, ScrollDirectionListener listener) {
+        RecyclerViewScrollDetectorImpl scrollDetector = new RecyclerViewScrollDetectorImpl();
+        scrollDetector.setListener(listener);
+        scrollDetector.setScrollThreshold(mScrollThreshold);
+        recyclerView.setOnScrollListener(scrollDetector);
+    }
+
+    public void attachToScrollView(@NonNull ObservableScrollView scrollView, ScrollDirectionListener listener) {
+        ScrollViewScrollDetectorImpl scrollDetector = new ScrollViewScrollDetectorImpl();
+        scrollDetector.setListener(listener);
+        scrollDetector.setScrollThreshold(mScrollThreshold);
+        scrollView.setOnScrollChangedListener(scrollDetector);
+    }
 
     private boolean hasLollipopApi() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
@@ -359,47 +377,79 @@ public class FloatingActionButton extends ImageButton {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN;
     }
 
-    public static class FabOnScrollListener extends ScrollDirectionDetector {
-        private FloatingActionButton mFloatingActionButton;
+    private boolean hasHoneycombApi() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB;
+    }
 
-        public FabOnScrollListener() {
-            setScrollDirectionListener(new ScrollDirectionListener() {
-                @Override
-                public void onScrollDown() {
-                    mFloatingActionButton.show();
-                }
+    private class AbsListViewScrollDetectorImpl extends AbsListViewScrollDetector {
+        private ScrollDirectionListener mListener;
 
-                @Override
-                public void onScrollUp() {
-                    mFloatingActionButton.hide();
-                }
-            });
+        private void setListener(ScrollDirectionListener scrollDirectionListener) {
+            mListener = scrollDirectionListener;
         }
 
-        public void setFloatingActionButton(FloatingActionButton floatingActionButton) {
-            mFloatingActionButton = floatingActionButton;
+        @Override
+        public void onScrollDown() {
+            show();
+            if (mListener != null) {
+                mListener.onScrollDown();
+            }
+        }
+
+        @Override
+        public void onScrollUp() {
+            hide();
+            if (mListener != null) {
+                mListener.onScrollUp();
+            }
         }
     }
 
-    public static class FabRecyclerOnViewScrollListener extends ScrollDirectionRecyclerViewDetector {
-        private FloatingActionButton mFloatingActionButton;
+    private class RecyclerViewScrollDetectorImpl extends RecyclerViewScrollDetector {
+        private ScrollDirectionListener mListener;
 
-        public FabRecyclerOnViewScrollListener() {
-            setScrollDirectionListener(new ScrollDirectionListener() {
-                @Override
-                public void onScrollDown() {
-                    mFloatingActionButton.show();
-                }
-
-                @Override
-                public void onScrollUp() {
-                    mFloatingActionButton.hide();
-                }
-            });
+        private void setListener(ScrollDirectionListener scrollDirectionListener) {
+            mListener = scrollDirectionListener;
         }
 
-        public void setFloatingActionButton(FloatingActionButton floatingActionButton) {
-            mFloatingActionButton = floatingActionButton;
+        @Override
+        public void onScrollDown() {
+            show();
+            if (mListener != null) {
+                mListener.onScrollDown();
+            }
+        }
+
+        @Override
+        public void onScrollUp() {
+            hide();
+            if (mListener != null) {
+                mListener.onScrollUp();
+            }
+        }
+    }
+
+    private class ScrollViewScrollDetectorImpl extends ScrollViewScrollDetector {
+        private ScrollDirectionListener mListener;
+
+        private void setListener(ScrollDirectionListener scrollDirectionListener) {
+            mListener = scrollDirectionListener;
+        }
+
+        @Override
+        public void onScrollDown() {
+            show();
+            if (mListener != null) {
+                mListener.onScrollDown();
+            }
+        }
+
+        @Override
+        public void onScrollUp() {
+            hide();
+            if (mListener != null) {
+                mListener.onScrollUp();
+            }
         }
     }
 }
