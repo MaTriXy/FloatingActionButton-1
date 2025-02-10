@@ -1,5 +1,7 @@
 package com.melnykov.fab;
 
+import android.animation.AnimatorInflater;
+import android.animation.StateListAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.ColorStateList;
@@ -89,6 +91,7 @@ public class FloatingActionButton extends ImageButton {
         setMeasuredDimension(size, size);
     }
 
+    @SuppressLint("NewApi")
     private void init(Context context, AttributeSet attributeSet) {
         mVisible = true;
         mColorNormal = getColor(R.color.material_blue_500);
@@ -99,6 +102,11 @@ public class FloatingActionButton extends ImageButton {
         mShadow = true;
         mScrollThreshold = getResources().getDimensionPixelOffset(R.dimen.fab_scroll_threshold);
         mShadowSize = getDimension(R.dimen.fab_shadow_size);
+        if (hasLollipopApi()) {
+            StateListAnimator stateListAnimator = AnimatorInflater.loadStateListAnimator(context,
+                    R.anim.fab_press_elevation);
+            setStateListAnimator(stateListAnimator);
+        }
         if (attributeSet != null) {
             initAttributes(context, attributeSet);
         }
